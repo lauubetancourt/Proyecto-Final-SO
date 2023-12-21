@@ -1,0 +1,79 @@
+#include <stdio.h> // Incluye las funciones de entrada y salida estándar.
+#include <stdlib.h> // Incluye varias funciones generales, como manejo de memoria, procesos, etc.
+#include <string.h> // Incluye varias funciones para manipular cadenas y arrays.
+#include <unistd.h> // Proporciona acceso a la API POSIX (sistema operativo portátil).
+#include <arpa/inet.h> // Incluye definiciones para operaciones de internet.
+
+#define PUERTO 9999 // Define el puerto en el que se va a conectar.
+
+// Función para manejar errores. Imprime el mensaje de error y termina el programa.
+void manejoDeError(const char *mensaje) {
+  perror(mensaje);
+  exit(EXIT_FAILURE);
+}
+
+// Función para crear un socket. Retorna el descriptor del socket.
+int crearSocket() {
+  int socket_cliente = socket(AF_INET, SOCK_STREAM, 0);
+  if (socket_cliente == -1) {
+    manejoDeError("Se presentó un error al crear el socket");
+  }
+  return socket_cliente;
+}
+
+// Función para configurar la dirección del servidor.
+struct sockaddr_in configurarDireccionServidor() {
+  struct sockaddr_in direccion_servidor;
+  direccion_servidor.sin_family = AF_INET;
+  direccion_servidor.sin_addr.s_addr =
+      inet_addr("127.0.0.1"); // Dirección IP del servidor (localhost).
+  direccion_servidor.sin_port = htons(PUERTO); // Puerto del servidor.
+  return direccion_servidor;
+}
+
+// Función para conectar al servidor.
+void conectarServidor(int socket_cliente,
+                       struct sockaddr_in *direccion_servidor) {
+  if (connect(socket_cliente, (struct sockaddr *)direccion_servidor,
+              sizeof(*direccion_servidor)) == -1) {
+    manejoDeError("Se presentó un error al conectar al servidor");
+  }
+  printf("Se ha conectado al servidor en %s:%d\n",
+         inet_ntoa(direccion_servidor->sin_addr),
+         ntohs(direccion_servidor->sin_port));
+}
+
+// Función para enviar comandos al servidor y recibir la respuesta.
+void ejecutarRetornar(int socket_cliente) {
+  char comando[1024];
+  char buffer[1024];
+  while (1) {
+    printf("Ingrese el comando a ejecutar o 'exit' si desea salir: ");
+    fgets(comando, sizeof(comando), stdin);
+    comando[strcspn(comando, "\n")] =
+        '\0'; // Elimina el carácter de nueva línea al final del comando.
+    if (strcmp(comando, "exit") == 0) {
+      break; // Si el comando es 'exit', termina el bucle.
+    }
+    send(socket_cliente, comando, strlen(comando), 0); // Envía el comando al servidor.
+    memset(buffer, 0, sizeof(buffer)); // Limpia el buffer.
+    ssize_t bytes_recibidos = recv(socket_cliente, buffer, sizeof(buffer), 0); // Recibe la respuesta del servidor.
+    if (bytes_recibidos <= 0) {
+      break; // Si no se reciben bytes, termina el bucle.
+    }
+    printf("La ejecución en el servidor retornó:\n%s\n", buffer); // Imprime la respuesta del servidor.
+  }
+}
+
+// Función para cerrar la conexión.
+void cerrarConexion(int socket_cliente) { close(socket_cliente); }
+
+// Función principal.
+int main() {
+  int socket_cliente = crearSocket(); // Crea un socket.
+  struct sockaddr_in direccion_servidor = configurarDireccionServidor(); // Configura la dirección del servidor.
+  conectarServidor(socket_cliente, &direccion_servidor); // Conecta al servidor.
+  ejecutarRetornar(socket_cliente); // Ejecuta comandos y recibe la respuesta.
+  cerrarConexion(socket_cliente); // Cierra la conexión.
+  return 0;
+}

